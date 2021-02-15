@@ -1,0 +1,218 @@
+
+/*
+ * 
+ *
+ *  Created on: 2020 Dec 09
+ *  Author: Robert Jacob
+ *  Version: 3.0
+ */
+
+//Automation of Station E - FMS 200
+
+
+
+#include <xmc_gpio.h>
+
+//Inputs
+#define startHorizontalRun   P0_0
+#define endHorizontalRun     P0_1
+#define startVerticalRun     P0_2
+#define endVerticalRun       P0_3
+#define startGripRotationRun P0_4
+#define endGripRotationRun   P0_5
+#define boltPresent          P0_6
+#define endFeedStopRun       P0_7
+#define startCycle           P0_8
+#define startButton          P0_9
+#define stopButton           P0_10
+#define emergencyButton      P0_11
+#define continueCycle        P0_12
+#define startFeedRun         P0_13
+
+//Outputs
+#define horizontalReturn     P1_0
+#define horizontalAdvance    P1_1
+#define verticalAdvance      P1_2
+#define gripRotationReturn   P1_3
+#define gripRoatationAdvance P1_4
+#define closeGripNo1         P1_5
+#define feedAdvance          P1_6
+#define feedStopAdvance      P1_7
+#define endCycle             P1_8
+#define closeGripNo2         P1_9
+
+
+//global variables
+
+int currentState = 0;    //state reference
+int boltPresent = 0;
+int gripper1Activated = 0;    //gripper status reference
+int gripper2Activated = 0;
+int horizontalPosition = 0;    //position status reference
+int verticalPosition = 0;
+int timer[10];   //declaration of timer array of int
+
+
+//declaration of timer toggle of 0.2 seconds
+
+#define tickPoint2Sec 200000U
+void timerToggle_Point2Sec(void){
+    	DIGITAL_IO_ToggleOutput(&DIGITAL_IO_0);
+}
+
+
+
+void initPortPins(){
+
+        XMC_GPIO_SetMode(startHorizontalRun, XMC_GPIO_MODE_INPUT_PULL_DOWN );
+	XMC_GPIO_SetMode(endHorizontalRun, XMC_GPIO_MODE_INPUT_PULL_DOWN );
+	XMC_GPIO_SetMode(startVerticalRun, XMC_GPIO_MODE_INPUT_PULL_DOWN );
+	XMC_GPIO_SetMode(endVerticalRun, XMC_GPIO_MODE_INPUT_PULL_DOWN );
+	XMC_GPIO_SetMode(startGripRotationRun, XMC_GPIO_MODE_INPUT_PULL_DOWN );
+	XMC_GPIO_SetMode(endGripRotationRun , XMC_GPIO_MODE_INPUT_PULL_DOWN );
+        XMC_GPIO_SetMode(boltPresent, XMC_GPIO_MODE_INPUT_PULL_DOWN );
+	XMC_GPIO_SetMode(endFeedStopRun, XMC_GPIO_MODE_INPUT_PULL_DOWN );
+	XMC_GPIO_SetMode(startCycle , XMC_GPIO_MODE_INPUT_PULL_DOWN );
+	XMC_GPIO_SetMode(startButton, XMC_GPIO_MODE_INPUT_PULL_DOWN );
+	XMC_GPIO_SetMode(stopButton, XMC_GPIO_MODE_INPUT_PULL_DOWN );
+	XMC_GPIO_SetMode(emergencyButton , XMC_GPIO_MODE_INPUT_PULL_DOWN );
+        XMC_GPIO_SetMode(continueCycle , XMC_GPIO_MODE_INPUT_PULL_DOWN );
+        XMC_GPIO_SetMode(startFeedRun , XMC_GPIO_MODE_INPUT_PULL_DOWN );
+	
+	XMC_GPIO_SetMode(horizontalReturn, XMC_GPIO_MODE_OUTPUT_PUSH_PULL);
+	XMC_GPIO_SetMode(horizontalAdvance, XMC_GPIO_MODE_OUTPUT_PUSH_PULL);
+	XMC_GPIO_SetMode(verticalAdvance, XMC_GPIO_MODE_OUTPUT_PUSH_PULL);
+	XMC_GPIO_SetMode(gripRotationReturn, XMC_GPIO_MODE_OUTPUT_PUSH_PULL);
+	XMC_GPIO_SetMode(gripRotationAdvance, XMC_GPIO_MODE_OUTPUT_PUSH_PULL);
+        XMC_GPIO_SetMode(closeGripNo1, XMC_GPIO_MODE_OUTPUT_PUSH_PULL);
+	XMC_GPIO_SetMode(feedAdvance , XMC_GPIO_MODE_OUTPUT_PUSH_PULL);
+	XMC_GPIO_SetMode(feedStopAdvance , XMC_GPIO_MODE_OUTPUT_PUSH_PULL);
+	XMC_GPIO_SetMode(endCycle , XMC_GPIO_MODE_OUTPUT_PUSH_PULL);
+	XMC_GPIO_SetMode(closeGripNo2, XMC_GPIO_MODE_OUTPUT_PUSH_PULL);
+
+}
+
+
+void TenthSecTick(void)  //Main timer
+ {
+		while(timer[1] == 1) //while timer is turned on
+		{
+			timer[2]++; //increment time
+			if(timer[2] > timer[3]) //if time elapsed is greater than expected
+			{
+				timer[4] = 1;
+			}
+		}
+
+		if (timer[5] == 1){  //resets timer and recorded value
+				timer[2]=0;
+				timer[4]=0;
+			}
+ }
+
+
+
+void setUpTimers(void)
+{
+
+	timer[1] = 0; //timer activation
+	timer[2] = 0; //timer elapsed
+	timer[3] = 5; //timer set
+	timer[4] = 0; // recorded value  (if 1 then malfunction)
+	timer[5] = 0 ; //resets timer and recorded value
+
+}
+
+
+void SysTick_Handler(void)
+{
+	TenthSecTick();
+}
+
+
+int main(void){   //main infinite loop
+
+    initPortPins();
+
+    while(1){
+
+         if((currentState == 0) && (XMC_GPIO_GetInput(startHorizontalRun) == 1) && (XMC_GPIO_GetInput(startVerticalRun) == 1)  && (XMC_GPIO_GetInput(startFeedRun) == 1)){ //cycle started after initial pulse
+                      currentState = 1;
+                      XMC_GPIO_SetOutputHigh(feedAdvance);
+                      XMC_GPIO_SetOutputHigh(startCycle);
+    }
+
+         if((currentState == 1) && (XMC_GPIO_GetInput(endFeedStopRun) == 1)){ //state transition as feed has stopped
+                      currentState = 2;
+                      XMC_GPIO_SetOutputLow(feedAdvance);
+    }
+
+
+      if((currentState == 2) && (XMC_GPIO_GetInput(boltPresent) == 1)){   //check if bolt is present
+                      currentState = 3;
+                      XMC_GPIO_SetOutputHigh(feedReturn);
+                      boltPresent = 1;
+                      
+    }
+
+      if((currentState == 3) && (XMC_GPIO_GetInput(startFeedRun) == 1)){   //check if feed has started
+                      currentState = 4;
+                      XMC_GPIO_SetOutputHigh(horizontalAdvance);           //output advance horizontal implement
+                      horizontalPosition = 1;
+                                                          
+    }
+
+      if((currentState == 4) && (horizontalPosition == 1)){  //check horizontal position has been reached
+                      currentState = 5;
+                      XMC_GPIO_SetOutputLow(horizontalAdvance);    //reset horizontal
+                      XMC_GPIO_SetOutputHigh(verticalAdvance);     //output advance vertical implement
+                      verticalPosition = 1;                   
+    }
+
+ 
+      if((currentState == 5) && (verticalPosition == 1)){   //check vertical position has been reached
+                      currentState = 6;
+                      XMC_GPIO_SetOutputHigh(closeGripNo1);   //close gripper
+                      XMC_GPIO_SetOutputHigh(closeGripNo2);
+                      XMC_GPIO_SetOutputLow(verticalAdvance);   //reset vertical output
+                      int gripper1Activated = 1;       //gripper is closed
+                      int gripper2Activated = 1;
+                      timer[1]=1; //start timer        //activate timer       
+    }
+
+      if((currentState == 6) && (XMC_GPIO_GetInput(startGripRotationRun) == 1)){  //check for grip rotation input
+                      currentState = 7;
+                      XMC_GPIO_SetOutputHigh(gripperRotationAdvance); 
+                      timer[1]=0; //end timer  
+
+ 
+                   
+    }
+
+      if(((currentState == 7) && (gripper1Activated) == 1) && ( gripper2Activated) == 1) && (timer[4] == 0)){  //check grippers active and timer elapse successful
+                      currentState = 8;
+                      XMC_GPIO_SetOutputLow(verticalAdvance);  //reset vertical
+                      verticalPosition = 0;
+                      timer[5]=1;  //reset timer
+                                         
+    }
+
+      if(((currentState == 8) && (verticalPosition == 0)){  //check position 
+                      currentState = 9;
+                      XMC_GPIO_SetOutputHigh(horizontalReturn);  //output return implement
+                      horizontalPosition = 0;
+                                         
+    }
+
+      if(((currentState == 9) && (horizontalPosition == 0)){   //horizontal position reached
+                      currentState = 10;
+                      XMC_GPIO_SetOutputHigh(endCycle);           //cycle ends                       
+    }
+
+
+      if(currentState == 10){  //loopback to state 0 waiting for initial pulse
+                      currentState = 0;                                                  
+    }            
+  }
+}
+
